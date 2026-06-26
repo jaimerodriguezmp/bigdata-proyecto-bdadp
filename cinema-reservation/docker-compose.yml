@@ -1,0 +1,47 @@
+version: "3"
+services:
+  cinema-node1:
+    image: cassandra:latest
+    container_name: cinema-node1
+    hostname: cinema-node1
+    environment:
+      - "MAX_HEAP_SIZE=1G"
+      - "HEAP_NEWSIZE=256M"
+      - "CASSANDRA_CLUSTER_NAME=CinemaCluster"
+    ports:
+      - 127.0.0.1:9042:9042
+    healthcheck:
+      test: ["CMD", "cqlsh", "-e", "describe keyspaces"]
+      interval: 30s
+      timeout: 10s
+      retries: 10
+
+  cinema-node2:
+    image: cassandra:latest
+    container_name: cinema-node2
+    hostname: cinema-node2
+    environment:
+      - "MAX_HEAP_SIZE=1G"
+      - "HEAP_NEWSIZE=256M"
+      - "CASSANDRA_CLUSTER_NAME=CinemaCluster"
+      - "CASSANDRA_SEEDS=cinema-node1"
+    ports:
+      - 127.0.0.2:9042:9042
+    depends_on:
+      cinema-node1:
+        condition: service_healthy
+
+  cinema-node3:
+    image: cassandra:latest
+    container_name: cinema-node3
+    hostname: cinema-node3
+    environment:
+      - "MAX_HEAP_SIZE=1G"
+      - "HEAP_NEWSIZE=256M"
+      - "CASSANDRA_CLUSTER_NAME=CinemaCluster"
+      - "CASSANDRA_SEEDS=cinema-node1"
+    ports:
+      - 127.0.0.3:9042:9042
+    depends_on:
+      cinema-node1:
+        condition: service_healthy
