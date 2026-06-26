@@ -81,6 +81,7 @@ def main():
             if confirm == "y":
                 init_schema(session)
                 seed_screenings(session)
+                session.set_keyspace("cinema_reservations")
 
         elif choice == "9":
             print("\nHELP:")
@@ -98,6 +99,10 @@ def main():
 
     if cluster:
         cluster.shutdown()
+
+
+def set_keyspace(session):
+    session.set_keyspace("cinema_reservations")
 
 
 if __name__ == "__main__":

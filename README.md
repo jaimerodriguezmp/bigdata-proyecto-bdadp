@@ -13,7 +13,7 @@ Base de datos distribuida **Apache Cassandra** (3 nodos en Docker) con aplicacio
 **Funcionalidades:**
 - Hacer reserva (insertar)
 - Actualizar reserva (modificar asiento)
-- Ver reservas por cliente
+- Ver reservas activas por cliente
 - Ver todas las reservas
 - Cancelar reserva individual
 - Cancelar multiples reservas a la vez
@@ -47,7 +47,7 @@ Dataset de 5000+ coches con analisis MapReduce (6 puntos):
 ## Estructura del proyecto
 
 ```
-BigData/
+proyecto_final_bigdata/
 ├── cinema-reservation/
 │   ├── docker-compose.yml        # 3 nodos Cassandra
 │   ├── app.py                    # Aplicacion principal (CLI)
@@ -66,7 +66,10 @@ BigData/
 │   ├── reducer.py                # Reducer para Hadoop Streaming
 │   ├── hadoop_runner.py          # Lanzador Hadoop desde Python
 │   ├── run_analysis.bat          # Menu de analisis
-│   └── run_hadoop.bat            # Ejecutar con Hadoop
+│   ├── run_hadoop.bat            # Ejecutar con Hadoop
+│   └── run_hadoop.sh             # Script alternativo para Hadoop
+├── Projekt BDaDP.pdf             # Memoria del proyecto
+└── README.md
 ```
 
 ## Como ejecutar
@@ -81,15 +84,24 @@ Esperar ~60s hasta que los nodos esten listos.
 ### 2. Inicializar base de datos
 ```cmd
 cd cinema-reservation
-run_app.bat
+python app.py
 ```
 Seleccionar opcion **8** para crear keyspace y tablas.
 
 ### 3. Aplicacion de reservas
 ```cmd
 cd cinema-reservation
-run_app.bat
+python app.py
 ```
+Opciones del menu:
+- **1** - Ver proyecciones disponibles
+- **2** - Hacer una reserva
+- **3** - Ver mis reservas (solo activas)
+- **4** - Ver todas las reservas
+- **5** - Actualizar una reserva
+- **6** - Cancelar una reserva
+- **7** - Cancelar multiples reservas
+- **8** - Inicializar / resetear BD
 
 ### 4. Pruebas de stress
 ```cmd
@@ -137,6 +149,8 @@ CREATE TABLE reservations (
 ```
 
 ## Problemas encontrados
-- Consistencia eventual de Cassandra requiere LWT para evitar condiciones de carrera
+- Cassandra no soporta `SELECT DISTINCT` con columnas que no sean de la partition key (solucionado eliminando DISTINCT)
+- Las queries que usan `ALLOW FILTERING` con columnas no indexadas pueden ser lentas en produccion
+- La consistencia eventual de Cassandra requiere LWT para evitar condiciones de carrera
 - Los stress tests demostraron que LWT (INSERT IF NOT EXISTS / UPDATE IF) resuelve correctamente la concurrencia
 - Hadoop en Windows requiere configuracion adicional (WSL o Cygwin recomendado)

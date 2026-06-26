@@ -1,14 +1,14 @@
 @echo off
 echo ============================================
-echo  ANALISIS DE DATOS DE COCHES CON HADOOP
+echo  CAR DATA ANALYSIS WITH HADOOP
 echo ============================================
-echo 1. Ejecutar con Python (todos los analisis)
-echo 2. Ejecutar con Python (modo interactivo)
-echo 3. Ejecutar con Hadoop Streaming
-echo 4. Regenerar dataset
-echo 0. Salir
+echo 1. Run with Python (all analyses)
+echo 2. Run with Python (interactive mode)
+echo 3. Run with Hadoop Streaming
+echo 4. Regenerate dataset
+echo 0. Exit
 echo ============================================
-set /p choice="Selecciona una opcion: "
+set /p choice="Select an option: "
 
 if "%choice%"=="1" (
     python analysis.py

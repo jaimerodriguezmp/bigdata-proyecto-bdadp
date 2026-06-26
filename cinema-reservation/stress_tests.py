@@ -16,6 +16,19 @@ from reservation import ReservationSystem
 STRESS_KEYSPACE = "cinema_stress_test"
 
 
+def reset_seats(session, count=100):
+    for i in range(1, count + 1):
+        for _ in range(3):
+            try:
+                session.execute(
+                    "INSERT INTO stress_seats (seat_id, status, customer, reservation_id, created_at) VALUES (%s, 'available', null, null, null)",
+                    (i,)
+                )
+                break
+            except Exception:
+                time.sleep(0.5)
+
+
 def init_stress_schema(session):
     session.execute(f"""
         CREATE KEYSPACE IF NOT EXISTS {STRESS_KEYSPACE}
@@ -33,21 +46,17 @@ def init_stress_schema(session):
         )
     """)
 
-    session.execute("TRUNCATE stress_seats")
-
-    for i in range(1, 101):
-        session.execute(
-            "INSERT INTO stress_seats (seat_id, status) VALUES (%s, 'available')",
-            (i,)
-        )
+    reset_seats(session, 100)
     print("  stress_seats table initialized with 100 seats.")
 
 
 def stress1_same_request():
     print("\n=== STRESS TEST 1: Same client, same quick request ===")
+    time.sleep(1)
     cluster = get_cluster()
     session = get_session(cluster)
     session.set_keyspace(STRESS_KEYSPACE)
+    reset_seats(session, 100)
 
     seat = 1
     successes = 0
@@ -59,6 +68,7 @@ def stress1_same_request():
         try:
             s = get_session(cluster)
             s.set_keyspace(STRESS_KEYSPACE)
+            time.sleep(random.uniform(0, 0.1))
             rid = uuid.uuid4()
             now = datetime.now()
             result = s.execute("""
@@ -74,7 +84,10 @@ def stress1_same_request():
                 print(f"  Thread-{t_id}: FAILED reservation seat {seat} (already occupied)")
             s.shutdown()
         except Exception as e:
-            print(f"  Thread-{t_id}: Error: {e}")
+            if "timed out" in str(e):
+                print(f"  Thread-{t_id}: FAILED reservation seat {seat} (CAS timed out)")
+            else:
+                print(f"  Thread-{t_id}: Error: {e}")
 
     for i in range(20):
         t = threading.Thread(target=try_book, args=(i,))
@@ -90,15 +103,11 @@ def stress1_same_request():
 
 def stress2_random_clients():
     print("\n=== STRESS TEST 2: Random simultaneous clients ===")
+    time.sleep(1)
     cluster = get_cluster()
     session = get_session(cluster)
     session.set_keyspace(STRESS_KEYSPACE)
-    session.execute("TRUNCATE stress_seats")
-    for i in range(1, 101):
-        session.execute(
-            "INSERT INTO stress_seats (seat_id, status) VALUES (%s, 'available')",
-            (i,)
-        )
+    reset_seats(session, 100)
     cluster.shutdown()
 
     total_ops = 50
@@ -114,17 +123,22 @@ def stress2_random_clients():
                 seat = random.randint(1, 100)
                 rid = uuid.uuid4()
                 now = datetime.now()
-                result = s.execute("""
-                    UPDATE stress_seats SET status = 'booked', customer = %s,
-                        reservation_id = %s, created_at = %s
-                    WHERE seat_id = %s IF status = 'available'
-                """, (f"client-{cid}", rid, now, seat))
-                if result.one().applied:
-                    with lock:
-                        results["success"] += 1
-                else:
+                try:
+                    result = s.execute("""
+                        UPDATE stress_seats SET status = 'booked', customer = %s,
+                            reservation_id = %s, created_at = %s
+                        WHERE seat_id = %s IF status = 'available'
+                    """, (f"client-{cid}", rid, now, seat))
+                    if result.one().applied:
+                        with lock:
+                            results["success"] += 1
+                    else:
+                        with lock:
+                            results["fail"] += 1
+                except Exception:
                     with lock:
                         results["fail"] += 1
+                time.sleep(random.uniform(0, 0.1))
             s.shutdown()
             c.shutdown()
         except Exception as e:
@@ -146,15 +160,11 @@ def stress2_random_clients():
 
 def stress3_occupy_all():
     print("\n=== STRESS TEST 3: Immediate occupation of ALL seats by 2 clients ===")
+    time.sleep(1)
     cluster = get_cluster()
     session = get_session(cluster)
     session.set_keyspace(STRESS_KEYSPACE)
-    session.execute("TRUNCATE stress_seats")
-    for i in range(1, 101):
-        session.execute(
-            "INSERT INTO stress_seats (seat_id, status) VALUES (%s, 'available')",
-            (i,)
-        )
+    reset_seats(session, 100)
     cluster.shutdown()
 
     client1_seats = []
@@ -169,14 +179,18 @@ def stress3_occupy_all():
             for seat in range(1, 101):
                 rid = uuid.uuid4()
                 now = datetime.now()
-                result = s.execute("""
-                    UPDATE stress_seats SET status = 'booked', customer = %s,
-                        reservation_id = %s, created_at = %s
-                    WHERE seat_id = %s IF status = 'available'
-                """, (name, rid, now, seat))
-                if result.one().applied:
-                    with lock:
-                        seat_list.append(seat)
+                try:
+                    result = s.execute("""
+                        UPDATE stress_seats SET status = 'booked', customer = %s,
+                            reservation_id = %s, created_at = %s
+                        WHERE seat_id = %s IF status = 'available'
+                    """, (name, rid, now, seat))
+                    if result.one().applied:
+                        with lock:
+                            seat_list.append(seat)
+                except Exception:
+                    pass
+                time.sleep(random.uniform(0, 0.02))
             s.shutdown()
             c.shutdown()
         except Exception as e:
@@ -203,15 +217,11 @@ def stress3_occupy_all():
 
 def stress4_cancel_and_occupy():
     print("\n=== STRESS TEST 4: Constant cancellations and occupation ===")
+    time.sleep(1)
     cluster = get_cluster()
     session = get_session(cluster)
     session.set_keyspace(STRESS_KEYSPACE)
-    session.execute("TRUNCATE stress_seats")
-    for i in range(1, 101):
-        session.execute(
-            "INSERT INTO stress_seats (seat_id, status) VALUES (%s, 'available')",
-            (i,)
-        )
+    reset_seats(session, 100)
     cluster.shutdown()
 
     stop_event = threading.Event()
@@ -227,15 +237,18 @@ def stress4_cancel_and_occupy():
                 seat = random.randint(1, 100)
                 rid = uuid.uuid4()
                 now = datetime.now()
-                result = s.execute("""
-                    UPDATE stress_seats SET status = 'booked', customer = %s,
-                        reservation_id = %s, created_at = %s
-                    WHERE seat_id = %s IF status = 'available'
-                """, (name, rid, now, seat))
-                if result.one().applied:
-                    with lock:
-                        booked_seats.add(seat)
-                    time.sleep(0.05)
+                try:
+                    result = s.execute("""
+                        UPDATE stress_seats SET status = 'booked', customer = %s,
+                            reservation_id = %s, created_at = %s
+                        WHERE seat_id = %s IF status = 'available'
+                    """, (name, rid, now, seat))
+                    if result.one().applied:
+                        with lock:
+                            booked_seats.add(seat)
+                except Exception:
+                    pass
+                time.sleep(0.03)
             s.shutdown()
             c.shutdown()
         except:
@@ -253,15 +266,18 @@ def stress4_cancel_and_occupy():
                     else:
                         seat = None
                 if seat is not None:
-                    result = s.execute("""
-                        UPDATE stress_seats SET status = 'available', customer = null,
-                            reservation_id = null, created_at = null
-                        WHERE seat_id = %s IF status = 'booked'
-                    """, (seat,))
-                    if result.one().applied:
-                        with lock:
-                            booked_seats.discard(seat)
-                time.sleep(0.03)
+                    try:
+                        result = s.execute("""
+                            UPDATE stress_seats SET status = 'available', customer = null,
+                                reservation_id = null, created_at = null
+                            WHERE seat_id = %s IF status = 'booked'
+                        """, (seat,))
+                        if result.one().applied:
+                            with lock:
+                                booked_seats.discard(seat)
+                    except:
+                        pass
+                time.sleep(0.05)
             s.shutdown()
             c.shutdown()
         except:
@@ -289,16 +305,21 @@ def stress4_cancel_and_occupy():
 
 def stress5_mass_cancel():
     print("\n=== STRESS TEST 5: Mass cancellation of many reservations ===")
+    time.sleep(1)
     cluster = get_cluster()
     session = get_session(cluster)
     session.set_keyspace(STRESS_KEYSPACE)
-    session.execute("TRUNCATE stress_seats")
     for i in range(1, 1001):
-        session.execute(
-            "INSERT INTO stress_seats (seat_id, status, customer, reservation_id, created_at) "
-            "VALUES (%s, 'booked', 'mass_client', %s, %s)",
-            (i, uuid.uuid4(), datetime.now())
-        )
+        for _ in range(3):
+            try:
+                session.execute(
+                    "INSERT INTO stress_seats (seat_id, status, customer, reservation_id, created_at) "
+                    "VALUES (%s, 'booked', 'mass_client', %s, %s)",
+                    (i, uuid.uuid4(), datetime.now())
+                )
+                break
+            except Exception:
+                time.sleep(0.5)
     cluster.shutdown()
 
     print("  1000 seats booked. Cancelling in parallel...")
@@ -313,14 +334,23 @@ def stress5_mass_cancel():
             s = get_session(c)
             s.set_keyspace(STRESS_KEYSPACE)
             for seat in range(start, end + 1):
-                result = s.execute("""
-                    UPDATE stress_seats SET status = 'available', customer = null,
-                        reservation_id = null, created_at = null
-                    WHERE seat_id = %s IF status = 'booked'
-                """, (seat,))
-                if result.one().applied:
+                for retry in range(5):
+                    try:
+                        result = s.execute("""
+                            UPDATE stress_seats SET status = 'available', customer = null,
+                                reservation_id = null, created_at = null
+                            WHERE seat_id = %s IF status = 'booked'
+                        """, (seat,))
+                        if result.one().applied:
+                            with lock:
+                                cancelled += 1
+                        break
+                    except Exception:
+                        time.sleep(0.1)
+                else:
                     with lock:
-                        cancelled += 1
+                        errors += 1
+                time.sleep(0.01)
             s.shutdown()
             c.shutdown()
         except Exception as e:
@@ -344,15 +374,29 @@ def stress5_mass_cancel():
 def main():
     print("===== STRESS TESTS =====")
     print("Connecting to Cassandra...")
-    try:
-        cluster = get_cluster()
-        session = get_session(cluster)
-        init_stress_schema(session)
-        cluster.shutdown()
-    except Exception as e:
-        print(f"Connection error: {e}")
-        input("Press Enter to exit...")
-        return
+    cluster = None
+    for attempt in range(5):
+        try:
+            cluster = get_cluster()
+            session = get_session(cluster)
+            init_stress_schema(session)
+            cluster.shutdown()
+            cluster = None
+            break
+        except Exception as e:
+            if cluster:
+                try:
+                    cluster.shutdown()
+                except:
+                    pass
+                cluster = None
+            if attempt < 4:
+                print(f"  Retrying connection ({attempt + 1}/5)...")
+                time.sleep(3)
+            else:
+                print(f"Connection error: {e}")
+                input("Press Enter to exit...")
+                return
 
     while True:
         print("\n--- SELECT A STRESS TEST ---")

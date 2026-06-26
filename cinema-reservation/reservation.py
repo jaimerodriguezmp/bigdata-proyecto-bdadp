@@ -3,13 +3,22 @@ import uuid
 from datetime import datetime
 
 
+KEYSPACE = "cinema_reservations"
+
+
 class ReservationSystem:
     def __init__(self, session):
         self.session = session
-        self.session.set_keyspace("cinema_reservations")
+
+    def _ensure_keyspace(self):
+        try:
+            self.session.set_keyspace(KEYSPACE)
+        except:
+            pass
 
     def list_screenings(self):
-        rows = self.session.execute("SELECT DISTINCT movie_name, show_time, screen_number, total_seats FROM screenings ALLOW FILTERING")
+        self._ensure_keyspace()
+        rows = self.session.execute("SELECT movie_name, show_time, screen_number, total_seats FROM screenings ALLOW FILTERING")
         print("\n--- AVAILABLE SCREENINGS ---")
         for row in rows:
             print(f"  Movie: {row.movie_name} | Screen: {row.screen_number} | "
@@ -17,6 +26,7 @@ class ReservationSystem:
         print()
 
     def get_available_seats(self, movie_name, show_time):
+        self._ensure_keyspace()
         total = self.session.execute(
             "SELECT total_seats FROM screenings WHERE movie_name = %s AND show_time = %s ALLOW FILTERING",
             (movie_name, show_time)
@@ -32,6 +42,7 @@ class ReservationSystem:
         return total_seats, booked_seats
 
     def make_reservation(self, movie_name, show_time, seat_number, customer_name):
+        self._ensure_keyspace()
         rid = uuid.uuid4()
         now = datetime.now()
         total, booked = self.get_available_seats(movie_name, show_time)
@@ -50,6 +61,7 @@ class ReservationSystem:
             return False, f"Error making reservation: {e}"
 
     def update_reservation(self, reservation_id, new_seat_number=None, new_movie=None, new_time=None):
+        self._ensure_keyspace()
         row = self.session.execute(
             "SELECT movie_name, show_time, seat_number, customer_name, status FROM reservations WHERE reservation_id = %s ALLOW FILTERING",
             (reservation_id,)
@@ -70,8 +82,9 @@ class ReservationSystem:
         return self.make_reservation(movie, show_time, seat, row.customer_name)
 
     def cancel_reservation(self, reservation_id):
+        self._ensure_keyspace()
         row = self.session.execute(
-            "SELECT status FROM reservations WHERE reservation_id = %s ALLOW FILTERING",
+            "SELECT movie_name, show_time, screen_number, seat_number, status FROM reservations WHERE reservation_id = %s ALLOW FILTERING",
             (reservation_id,)
         ).one()
         if not row:
@@ -92,26 +105,29 @@ class ReservationSystem:
         return results
 
     def view_reservations(self, customer_name=None):
+        self._ensure_keyspace()
         if customer_name:
             rows = self.session.execute(
-                "SELECT movie_name, show_time, seat_number, status, reservation_id, created_at "
-                "FROM reservations WHERE customer_name = %s ALLOW FILTERING",
+                "SELECT movie_name, show_time, seat_number, customer_name, status, reservation_id, created_at "
+                "FROM reservations WHERE customer_name = %s AND status = 'booked' ALLOW FILTERING",
                 (customer_name,)
             )
         else:
             rows = self.session.execute("SELECT movie_name, show_time, seat_number, customer_name, "
-                                        "status, reservation_id, created_at FROM reservations")
-        print("\n--- RESERVATIONS ---")
+                                        "status, reservation_id, created_at FROM reservations "
+                                        "WHERE status = 'booked' ALLOW FILTERING")
+        print("\n--- ACTIVE RESERVATIONS ---")
         count = 0
         for r in rows:
             print(f"  ID: {r.reservation_id} | Customer: {r.customer_name} | Movie: {r.movie_name} | "
                   f"Seat: {r.seat_number} | Status: {r.status} | Date: {r.created_at}")
             count += 1
         if count == 0:
-            print("  No reservations.")
+            print("  No active reservations.")
         print()
 
     def view_all_reservations_with_customer(self):
+        self._ensure_keyspace()
         rows = self.session.execute("SELECT movie_name, show_time, customer_name, seat_number, status, reservation_id FROM reservations")
         print("\n--- ALL RESERVATIONS ---")
         for r in rows:

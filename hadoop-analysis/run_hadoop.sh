@@ -1,6 +1,6 @@
 #!/bin/bash
-# Script para ejecutar el analisis Hadoop Streaming
-# Requiere: Hadoop instalado y DATA_FILE en HDFS
+# Script to run Hadoop Streaming analysis
+# Requires: Hadoop installed and DATA_FILE in HDFS
 
 DATA_FILE="car_sales.csv"
 HDFS_INPUT="/user/$(whoami)/car_sales"

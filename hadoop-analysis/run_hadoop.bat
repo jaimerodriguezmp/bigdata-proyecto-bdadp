@@ -1,7 +1,7 @@
 @echo off
 echo ============================================
-echo  EJECUTAR ANALISIS CON HADOOP STREAMING
-echo  Requiere Hadoop instalado y en PATH
+echo  RUN ANALYSIS WITH HADOOP STREAMING
+echo  Requires Hadoop installed and in PATH
 echo ============================================
 python hadoop_runner.py
 pause
